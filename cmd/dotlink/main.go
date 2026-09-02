@@ -27,6 +27,8 @@ func main() {
 		runStatus(*source, *target)
 	case "link":
 		runLink(*source, *target)
+	case "unlink":
+		runUnlink(*source, *target)
 	default:
 		usage()
 		os.Exit(2)
@@ -34,7 +36,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: dotlink <status|link> [-source dir] [-target dir]")
+	fmt.Fprintln(os.Stderr, "usage: dotlink <status|link|unlink> [-source dir] [-target dir]")
 }
 
 func runStatus(source, target string) {
@@ -74,5 +76,27 @@ func runLink(source, target string) {
 	if conflicts > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d file(s) left untouched, resolve manually and rerun\n", conflicts)
 		os.Exit(1)
+	}
+}
+
+func runUnlink(source, target string) {
+	actions, err := dotlink.PlanUnlink(source, target)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dotlink:", err)
+		os.Exit(1)
+	}
+
+	for _, a := range actions {
+		if a.Kind == dotlink.Foreign {
+			fmt.Fprintf(os.Stderr, "skip %s: %s is not a symlink to %s\n", a.Name, a.Target, a.Source)
+			continue
+		}
+		if err := dotlink.ApplyUnlink(a); err != nil {
+			fmt.Fprintln(os.Stderr, "dotlink:", err)
+			os.Exit(1)
+		}
+		if a.Kind == dotlink.Managed {
+			fmt.Printf("removed  %s\n", a.Name)
+		}
 	}
 }

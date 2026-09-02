@@ -55,6 +55,10 @@ dotlink status -source ~/dotfiles -target ~
 # create or repair symlinks, skipping anything that would overwrite
 # a file with different content
 dotlink link -source ~/dotfiles -target ~
+
+# remove symlinks dotlink created, leaving anything else at the
+# target path alone
+dotlink unlink -source ~/dotfiles -target ~
 ```
 
 Both flags default to `-source .` and `-target $HOME`, so from inside a
@@ -69,6 +73,7 @@ go build -o dotlink ./cmd/dotlink
 ## Status
 
 Early skeleton. Works for the basic link/relink/conflict cases described
-above. Not yet handled: backing up conflicting files automatically,
-unlinking, or a config file for renaming targets that shouldn't just be
-"source name with a dot in front."
+above, plus removing symlinks it created via `unlink`. Not yet handled:
+backing up conflicting files automatically, or a config file for
+renaming targets that shouldn't just be "source name with a dot in
+front."

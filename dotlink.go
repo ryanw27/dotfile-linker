@@ -58,18 +58,13 @@ type Action struct {
 // symlink in targetDir and returns the action needed for each one. It
 // only reads the filesystem; it never modifies it.
 func Plan(sourceDir, targetDir string) ([]Action, error) {
-	entries, err := os.ReadDir(sourceDir)
+	names, err := sourceFiles(sourceDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading source dir: %w", err)
+		return nil, err
 	}
 
 	var actions []Action
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || strings.HasPrefix(name, ".") {
-			continue
-		}
-
+	for _, name := range names {
 		source, err := filepath.Abs(filepath.Join(sourceDir, name))
 		if err != nil {
 			return nil, err
@@ -84,6 +79,25 @@ func Plan(sourceDir, targetDir string) ([]Action, error) {
 		actions = append(actions, Action{Name: name, Source: source, Target: target, Kind: kind})
 	}
 	return actions, nil
+}
+
+// sourceFiles lists the top-level, non-hidden file names in sourceDir that
+// Plan and PlanUnlink both operate on.
+func sourceFiles(sourceDir string) ([]string, error) {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading source dir: %w", err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 func classify(source, target string) (ActionKind, error) {
@@ -156,4 +170,107 @@ func sameContent(a, b string) (bool, error) {
 		return false, err
 	}
 	return ha == hb, nil
+}
+
+// UnlinkKind describes what PlanUnlink decided needs to happen to a
+// single file.
+type UnlinkKind int
+
+const (
+	// Managed means the target is a symlink pointing at the source file,
+	// so it's ours to remove.
+	Managed UnlinkKind = iota
+	// Absent means there's nothing at the target path; nothing to do.
+	Absent
+	// Foreign means something exists at the target but it isn't a
+	// symlink to the source, so PlanUnlink won't touch it: it might be a
+	// real file, or a symlink some other tool created.
+	Foreign
+)
+
+func (k UnlinkKind) String() string {
+	switch k {
+	case Managed:
+		return "remove"
+	case Absent:
+		return "absent"
+	case Foreign:
+		return "foreign"
+	default:
+		return "unknown"
+	}
+}
+
+// UnlinkAction is one file's worth of unlink plan.
+type UnlinkAction struct {
+	Name   string
+	Source string
+	Target string
+	Kind   UnlinkKind
+}
+
+// PlanUnlink looks at every top-level file in sourceDir and reports
+// whether its corresponding target in targetDir is a symlink dotlink
+// would have created, so it's safe to remove. Like Plan, it only reads
+// the filesystem.
+func PlanUnlink(sourceDir, targetDir string) ([]UnlinkAction, error) {
+	names, err := sourceFiles(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var actions []UnlinkAction
+	for _, name := range names {
+		source, err := filepath.Abs(filepath.Join(sourceDir, name))
+		if err != nil {
+			return nil, err
+		}
+		target := filepath.Join(targetDir, "."+name)
+
+		kind, err := classifyUnlink(source, target)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+
+		actions = append(actions, UnlinkAction{Name: name, Source: source, Target: target, Kind: kind})
+	}
+	return actions, nil
+}
+
+func classifyUnlink(source, target string) (UnlinkKind, error) {
+	info, err := os.Lstat(target)
+	if os.IsNotExist(err) {
+		return Absent, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		dest, err := os.Readlink(target)
+		if err != nil {
+			return 0, err
+		}
+		if dest == source {
+			return Managed, nil
+		}
+	}
+	return Foreign, nil
+}
+
+// ApplyUnlink removes a's target if and only if it's Managed. Absent and
+// Foreign are no-ops: there's nothing at the target, or there's something
+// there that dotlink didn't create and won't delete.
+func ApplyUnlink(a UnlinkAction) error {
+	switch a.Kind {
+	case Absent, Foreign:
+		return nil
+	case Managed:
+		if err := os.Remove(a.Target); err != nil {
+			return fmt.Errorf("%s: removing %s: %w", a.Name, a.Target, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s: unknown unlink kind %v", a.Name, a.Kind)
+	}
 }
