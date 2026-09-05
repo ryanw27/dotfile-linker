@@ -160,6 +160,42 @@ func Apply(a Action) error {
 	}
 }
 
+// ApplyBackup behaves like Apply, except a Conflict is no longer refused:
+// the existing target is renamed out of the way first (see backupPath),
+// then the symlink is created as if the action had been Create.
+func ApplyBackup(a Action) error {
+	if a.Kind != Conflict {
+		return Apply(a)
+	}
+
+	backup, err := backupPath(a.Target)
+	if err != nil {
+		return fmt.Errorf("%s: finding backup path for %s: %w", a.Name, a.Target, err)
+	}
+	if err := os.Rename(a.Target, backup); err != nil {
+		return fmt.Errorf("%s: backing up %s: %w", a.Name, a.Target, err)
+	}
+
+	return Apply(Action{Name: a.Name, Source: a.Source, Target: a.Target, Kind: Create})
+}
+
+// backupPath finds a path near target to move the existing file to,
+// trying "<target>.bak" first and then "<target>.bak.1", "<target>.bak.2",
+// and so on until it finds one that isn't already taken.
+func backupPath(target string) (string, error) {
+	candidate := target + ".bak"
+	for i := 1; ; i++ {
+		_, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		candidate = fmt.Sprintf("%s.bak.%d", target, i)
+	}
+}
+
 func sameContent(a, b string) (bool, error) {
 	ha, err := hashFile(a)
 	if err != nil {

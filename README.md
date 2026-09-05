@@ -56,6 +56,10 @@ dotlink status -source ~/dotfiles -target ~
 # a file with different content
 dotlink link -source ~/dotfiles -target ~
 
+# same, but move conflicting files aside (to "<target>.bak", or
+# "<target>.bak.N" if that's taken) instead of skipping them
+dotlink link -source ~/dotfiles -target ~ -backup
+
 # remove symlinks dotlink created, leaving anything else at the
 # target path alone
 dotlink unlink -source ~/dotfiles -target ~
@@ -73,7 +77,7 @@ go build -o dotlink ./cmd/dotlink
 ## Status
 
 Early skeleton. Works for the basic link/relink/conflict cases described
-above, plus removing symlinks it created via `unlink`. Not yet handled:
-backing up conflicting files automatically, or a config file for
+above, plus removing symlinks it created via `unlink` and backing up
+conflicting files with `-backup`. Not yet handled: a config file for
 renaming targets that shouldn't just be "source name with a dot in
-front."
+front," and no tests yet.
