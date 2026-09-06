@@ -27,10 +27,32 @@ A file named `bashrc` in the source directory maps to `~/.bashrc`. Only
 top-level files are considered; subdirectories and dotfiles (like `.git`)
 in the source are skipped.
 
+## Custom targets
+
+Not everything fits "source name with a dot in front" — `gitconfig`
+might belong at `~/.config/git/config` instead of `~/.gitconfig`. Put
+overrides in a mapping file, one `name target` pair per line, target
+relative to the target directory:
+
+```
+# .dotlinkmap
+gitconfig config/git/config
+```
+
+The CLI loads `<source>/.dotlinkmap` automatically if it exists, or a
+different file via `-map`. Library callers pass a mapping (or `nil`)
+straight to `Plan`/`PlanUnlink`; `dotlink.LoadMapping` reads the file
+format above.
+
 ## Library usage
 
 ```go
-actions, err := dotlink.Plan("/home/ryan/dotfiles", os.Getenv("HOME"))
+mapping, err := dotlink.LoadMapping(filepath.Join(source, ".dotlinkmap"))
+if err != nil {
+    log.Fatal(err)
+}
+
+actions, err := dotlink.Plan("/home/ryan/dotfiles", os.Getenv("HOME"), mapping)
 if err != nil {
     log.Fatal(err)
 }
@@ -63,9 +85,12 @@ dotlink link -source ~/dotfiles -target ~ -backup
 # remove symlinks dotlink created, leaving anything else at the
 # target path alone
 dotlink unlink -source ~/dotfiles -target ~
+
+# use a mapping file somewhere other than <source>/.dotlinkmap
+dotlink link -source ~/dotfiles -target ~ -map ~/dotfiles/custom.map
 ```
 
-Both flags default to `-source .` and `-target $HOME`, so from inside a
+`-source` and `-target` default to `.` and `$HOME`, so from inside a
 dotfiles checkout `dotlink link` is usually enough.
 
 Build it with:
@@ -77,7 +102,6 @@ go build -o dotlink ./cmd/dotlink
 ## Status
 
 Early skeleton. Works for the basic link/relink/conflict cases described
-above, plus removing symlinks it created via `unlink` and backing up
-conflicting files with `-backup`. Not yet handled: a config file for
-renaming targets that shouldn't just be "source name with a dot in
-front," and no tests yet.
+above, plus removing symlinks it created via `unlink`, backing up
+conflicting files with `-backup`, and custom targets via a mapping file.
+Not yet handled: recursive source directories, and no tests yet.

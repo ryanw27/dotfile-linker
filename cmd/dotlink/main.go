@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	dotlink "github.com/ryanw27/dotfile-linker"
 )
@@ -21,15 +22,25 @@ func main() {
 	source := fs.String("source", ".", "directory containing the dotfiles to link")
 	target := fs.String("target", os.Getenv("HOME"), "directory the symlinks are created in")
 	backup := fs.Bool("backup", false, "for link: move conflicting files aside instead of skipping them")
+	mapFile := fs.String("map", "", "mapping file overriding target names (default: <source>/.dotlinkmap, if present)")
 	fs.Parse(os.Args[2:])
+
+	if *mapFile == "" {
+		*mapFile = filepath.Join(*source, ".dotlinkmap")
+	}
+	mapping, err := dotlink.LoadMapping(*mapFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dotlink:", err)
+		os.Exit(1)
+	}
 
 	switch cmd {
 	case "status":
-		runStatus(*source, *target)
+		runStatus(*source, *target, mapping)
 	case "link":
-		runLink(*source, *target, *backup)
+		runLink(*source, *target, *backup, mapping)
 	case "unlink":
-		runUnlink(*source, *target)
+		runUnlink(*source, *target, mapping)
 	default:
 		usage()
 		os.Exit(2)
@@ -37,11 +48,11 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: dotlink <status|link|unlink> [-source dir] [-target dir] [-backup]")
+	fmt.Fprintln(os.Stderr, "usage: dotlink <status|link|unlink> [-source dir] [-target dir] [-backup] [-map file]")
 }
 
-func runStatus(source, target string) {
-	actions, err := dotlink.Plan(source, target)
+func runStatus(source, target string, mapping map[string]string) {
+	actions, err := dotlink.Plan(source, target, mapping)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dotlink:", err)
 		os.Exit(1)
@@ -51,8 +62,8 @@ func runStatus(source, target string) {
 	}
 }
 
-func runLink(source, target string, backup bool) {
-	actions, err := dotlink.Plan(source, target)
+func runLink(source, target string, backup bool, mapping map[string]string) {
+	actions, err := dotlink.Plan(source, target, mapping)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dotlink:", err)
 		os.Exit(1)
@@ -87,8 +98,8 @@ func runLink(source, target string, backup bool) {
 	}
 }
 
-func runUnlink(source, target string) {
-	actions, err := dotlink.PlanUnlink(source, target)
+func runUnlink(source, target string, mapping map[string]string) {
+	actions, err := dotlink.PlanUnlink(source, target, mapping)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dotlink:", err)
 		os.Exit(1)

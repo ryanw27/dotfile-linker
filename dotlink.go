@@ -2,8 +2,9 @@
 // directory (normally $HOME) as symlinks named with a leading dot.
 //
 // A file named "bashrc" in the source directory maps to "~/.bashrc" in
-// the target. Nothing recursive, nothing clever about naming: the point
-// is to keep the mapping obvious from looking at the repo.
+// the target by default. A caller can override individual names via a
+// mapping (see LoadMapping) when the leading-dot convention doesn't fit,
+// e.g. linking "gitconfig" to "~/.config/git/config" instead.
 package dotlink
 
 import (
@@ -57,7 +58,11 @@ type Action struct {
 // Plan compares every top-level file in sourceDir against its expected
 // symlink in targetDir and returns the action needed for each one. It
 // only reads the filesystem; it never modifies it.
-func Plan(sourceDir, targetDir string) ([]Action, error) {
+//
+// mapping overrides the default "name" -> ".name" target for individual
+// files (see LoadMapping); it may be nil to use the default for
+// everything.
+func Plan(sourceDir, targetDir string, mapping map[string]string) ([]Action, error) {
 	names, err := sourceFiles(sourceDir)
 	if err != nil {
 		return nil, err
@@ -69,7 +74,7 @@ func Plan(sourceDir, targetDir string) ([]Action, error) {
 		if err != nil {
 			return nil, err
 		}
-		target := filepath.Join(targetDir, "."+name)
+		target := targetFor(targetDir, name, mapping)
 
 		kind, err := classify(source, target)
 		if err != nil {
@@ -249,7 +254,11 @@ type UnlinkAction struct {
 // whether its corresponding target in targetDir is a symlink dotlink
 // would have created, so it's safe to remove. Like Plan, it only reads
 // the filesystem.
-func PlanUnlink(sourceDir, targetDir string) ([]UnlinkAction, error) {
+//
+// mapping must match whatever was passed to Plan when the symlinks were
+// created, or PlanUnlink will look in the wrong place and report the
+// managed symlink as Foreign.
+func PlanUnlink(sourceDir, targetDir string, mapping map[string]string) ([]UnlinkAction, error) {
 	names, err := sourceFiles(sourceDir)
 	if err != nil {
 		return nil, err
@@ -261,7 +270,7 @@ func PlanUnlink(sourceDir, targetDir string) ([]UnlinkAction, error) {
 		if err != nil {
 			return nil, err
 		}
-		target := filepath.Join(targetDir, "."+name)
+		target := targetFor(targetDir, name, mapping)
 
 		kind, err := classifyUnlink(source, target)
 		if err != nil {
